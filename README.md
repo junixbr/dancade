@@ -1,0 +1,1 @@
+Dancade is a MAME (mamedev.org) frontend to use mainly in Raspberry Pi devices. Written in python, it has a proposal to be light, simple and beautiful. With a very easy game selection mechanism, without the need for fancy settings.
