@@ -12,7 +12,7 @@ from lib import utils
 from lib import db
 
 # categories
-with open("mame/data.pkl", "rb") as input_file:
+with open("../resources/mame/data.pkl", "rb") as input_file:
     data = cPickle.load(input_file)
 input_file.close()
 

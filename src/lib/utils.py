@@ -24,12 +24,118 @@ from lib import mame
 global CONFS
 CONFS=[]
 #CONFS = settings.readConf()
-CONFS.append('mame/roms')
+CONFS.append('../resources/mame/roms')
+
+database = db.dataBase()
+existDb = db.check_db_exist()
+emulator = mame.Mame()
+
+# main class
+class utilsMain():
+    def __init__(self, window):
+        self.Window = window
+        self.widgetMain = self.Window.cwidget
+
+
+        self.load_game_list()
+
+        self.Scene = myScene(self.Window)
+        self.View = QGraphicsView(self.Scene, self.Window)
+        sizeScreen = QDesktopWidget().screenGeometry(-1)
+        self.View.setGeometry(0, 0, sizeScreen.width(), sizeScreen.height())
+        self.View.setStyleSheet("border: 0px")
+        self.View.setViewportMargins(-2, -2, -2, -2)
+        self.View.setFrameStyle(QFrame.NoFrame)
+
+        # clean first screen
+        self.Window.setStyleSheet("")
+        self.Window.pbar.setParent(None)
+
+        self.View.show()
+
+    # load game list
+    def load_game_list(self):
+        logging.info('MAIN: trying to load the game library')
+        if existDb:
+            logging.info('MAIN: check if there is a new rom')
+            total_mame_games = self.total_roms()
+            data_game, data_game_count = database.queryGame()
+            logging.info('MAIN: total roms in the directory: %d' % int(total_mame_games.strip()))
+            logging.info('MAIN: total roms in the database: %d' % data_game_count[0])
+            if int(total_mame_games) != data_game_count[0]:
+                logging.info('MAIN: there is roms to change')
+                self.collectRomsInfo()
+            else:
+                library = database.queryLibrary()
+        else:
+            logging.info('MAIN: updating game library database')
+            self.collectRomsInfo()
+
+    # total roms
+    def total_roms(self):
+        # count number of roms in the directory
+        proc = subprocess.Popen('ls %s/*.zip | wc -l' % CONFS[0], shell=True, stdout=subprocess.PIPE)
+        total_mame_games = proc.stdout.read()
+        return total_mame_games
+
+    # check roms
+    def collectRomsInfo(self):
+        # remove old database file
+        logging.info('MAIN: removing old database file if exist')
+        try:
+            database.close()
+        except Exception as e:
+            logging.info('MAIN: the database is not open')
+
+        try:
+            if os.path.isfile('db/dancade.db3'):
+                os.remove('db/dancade.db3')
+        except Exception as e:
+            logging.error('MAIN: error to remove database file: %s' % e)
+
+        # create a new database
+        database.createDb()
+        database.open()
+        database.startTransaction()
+        total_mame_games = self.total_roms()
+        logging.info('MAIN: total mame games: %s' % total_mame_games.decode('utf-8').strip())
+        max_a = int(total_mame_games)
+        proc = subprocess.Popen(['ls %s | grep zip' % CONFS[0]], shell=True, stdout=subprocess.PIPE)
+        tmp_games = proc.stdout.readlines()
+        progressBar = self.Window.pbar
+        progressBar.setRange(1, max_a)
+        item = 1
+        for game in tmp_games:
+            self.Window.drawBar(item)
+            self.Window.update()
+            QCoreApplication.processEvents()
+            game_info = emulator.xmlParse(game.decode('utf-8').strip().split('.')[0])
+            if type(game_info) != bool:
+                logging.info('MAIN: adding game: %s - %s...' % (game_info[0], game_info[1][:20]))
+                sql = """INSERT INTO game (game, description, year, manufacturer, picture, video, status) VALUES (?, ?, ?, ?, ?, ?, ?)"""
+                idgame = database.insert(sql, [game_info[0], game_info[1], game_info[2], game_info[3], game_info[0] + ".png", game_info[0] + ".mng", game_info[4]])
+            else:
+                logging.info('MAIN: some game information is missing')
+            item += 1
+
+            # generate categories
+            category_info = emulator.getCategory(game.decode('utf-8').strip().split('.')[0])
+            if type(category_info) != bool:
+                logging.info('MAIN: adding category: %s' % category_info)
+                # library name
+                idlibname = db.check_library(category_info)
+                # library
+                sql = """INSERT INTO library (idgame, idlibname) VALUES (?, ?)"""
+                database.insert(sql, [idgame, idlibname[0]])
+                database.commit()
+            else:
+                logging.info('MAIN: category is on the database already or information is missing')
 
 class myScene(QGraphicsScene):
     def __init__(self, parent=None):
         super(myScene, self).__init__(parent)
         self.parent = parent
+
         sizeScreen = QDesktopWidget().screenGeometry(-1)
         self.setSceneRect(QRectF(0, 0, sizeScreen.width(), sizeScreen.height()))
         self.installEventFilter(self)
@@ -56,11 +162,7 @@ class myScene(QGraphicsScene):
 
         self.media_player = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         self.media_player.setVideoOutput(self.video_item)
-
-        self.database = db.dataBase()
-        self.existDb = db.check_db_exist()
-        self.emulator = mame.Mame()
-        self.load_game_list()
+        self.media_player.mediaStatusChanged.connect(self.videoStatusChanged)
 
         # change background
         background_image = QGraphicsPixmapItem()
@@ -142,85 +244,6 @@ class myScene(QGraphicsScene):
                 self.parent.close()
                 QCoreApplication.quit()
         return super(myScene, self).eventFilter(source, event)
-
-    # load game list
-    def load_game_list(self):
-        logging.info('MAIN: trying to load the game library')
-        if self.existDb:
-            logging.info('MAIN: check if there is a new rom')
-            total_mame_games = self.total_roms()
-            data_game, data_game_count = self.database.queryGame()
-            logging.info('MAIN: total roms in the directory: %d' % int(total_mame_games.strip()))
-            logging.info('MAIN: total roms in the database: %d' % data_game_count[0])
-            if int(total_mame_games) != data_game_count[0]:
-                logging.info('MAIN: there is roms to change')
-                self.collectRomsInfo()
-            else:
-                library = self.database.queryLibrary()
-        else:
-            logging.info('MAIN: updating game library database')
-            self.collectRomsInfo()
-
-    # total roms
-    def total_roms(self):
-        # count number of roms in the directory
-        proc = subprocess.Popen('ls %s/*.zip | wc -l' % CONFS[0], shell=True, stdout=subprocess.PIPE)
-        total_mame_games = proc.stdout.read()
-        return total_mame_games
-
-    # check roms
-    def collectRomsInfo(self):
-        # remove old database file
-        logging.info('MAIN: removing old database file if exist')
-        try:
-            self.database.close()
-        except Exception as e:
-            logging.info('MAIN: the database is not open')
-
-        try:
-            if os.path.isfile('db/dancade.db3'):
-                os.remove('db/dancade.db3')
-        except Exception as e:
-            logging.error('MAIN: error to remove database file: %s' % e)
-
-        # create a new database
-        self.database.createDb()
-        self.database.open()
-        self.database.startTransaction()
-        total_mame_games = self.total_roms()
-
-        logging.info('MAIN: total mame games: %s' % total_mame_games.decode('utf-8').strip())
-        max_a = int(total_mame_games)
-        proc = subprocess.Popen(['ls %s | grep zip' % CONFS[0]], shell=True, stdout=subprocess.PIPE)
-        tmp_games = proc.stdout.readlines()
-        progressBar = self.Window.pbar
-        progressBar.setRange(1, max_a)
-        item = 1
-        for game in tmp_games:
-            self.Window.drawBar(item)
-            self.Window.update()
-            QCoreApplication.processEvents()
-            game_info = self.emulator.xmlParse(game.decode('utf-8').strip().split('.')[0])
-            if type(game_info) != bool:
-                logging.info('MAIN: adding game: %s - %s...' % (game_info[0], game_info[1][:20]))
-                sql = """INSERT INTO game (game, description, year, manufacturer, picture, video, status) VALUES (?, ?, ?, ?, ?, ?, ?)"""
-                idgame = self.database.insert(sql, [game_info[0], game_info[1], game_info[2], game_info[3], game_info[0] + ".png", game_info[0] + ".mng", game_info[4]])
-            else:
-                logging.info('MAIN: some game information is missing')
-            item += 1
-
-            # generate categories
-            category_info = self.emulator.getCategory(game.decode('utf-8').strip().split('.')[0])
-            if type(category_info) != bool:
-                logging.info('MAIN: adding category: %s' % category_info)
-                # library name
-                idlibname = db.check_library(category_info)
-                # library
-                sql = """INSERT INTO library (idgame, idlibname) VALUES (?, ?)"""
-                self.database.insert(sql, [idgame, idlibname[0]])
-                self.database.commit()
-            else:
-                logging.info('MAIN: category is on the database already or information is missing')
 
     # create label
     def printLabel(self, text, x, y, size, color):
@@ -365,7 +388,7 @@ class myScene(QGraphicsScene):
         lin = 530
 
         # generate a game list of library
-        self.library = self.database.queryLibrary()
+        self.library = database.queryLibrary()
         self.library_label = []
         self.total_library = len(self.library)
         self.games = []
@@ -374,7 +397,7 @@ class myScene(QGraphicsScene):
         self.games_per_lin = [0 for x in range(len(self.library))]
         glin = 0
         for lib in self.library:
-            data_game = self.database.queryOrganicGames(lib[0])
+            data_game = database.queryOrganicGames(lib[0])
             if len(data_game) > 0:
                 self.games_per_lin[glin] = len(data_game)
                 libText = self.printLabel(lib[1], col, lin, size, Qt.lightGray)
@@ -389,7 +412,7 @@ class myScene(QGraphicsScene):
                     col_game_label = col + 150 - lbl.boundingRect().width() / 2
                     lin_game_label = lin + 240
                     self.updateLabel(lbl, game_label_text, col_game_label, lin_game_label, 14, Qt.white)
-                    game_item = self.loadGamePicture('mame/artwork/%s' % item[5], col, lin + 40)
+                    game_item = self.loadGamePicture('../resources/mame/artwork/%s' % item[5], col, lin + 40)
                     game = {'id': item[0], 'game': item[1], 'description': item[2], 'year': item[3],
                                 'manufacturer': item[4], 'picture': item[5], 'video': item[6],
                                 'lastplayed': item[7], 'playcount': item[8], 'rating': item[9],
@@ -432,28 +455,34 @@ class myScene(QGraphicsScene):
 
     # check if video is horizontal or vertical
     def checkVideoOrientation(self, current_game):
-        file = os.path.join(os.path.dirname(__file__), "../mame/snap/%s.mp4" % current_game)
+        file = os.path.join(os.path.dirname(__file__), "../../resources/mame/snap/%s.mp4" % current_game)
         video = VideoCapture(file)
         width = video.get(CAP_PROP_FRAME_WIDTH)
         height = video.get(CAP_PROP_FRAME_HEIGHT)
         try:
             if not self.video_frame:
-                if width > height:
+                if width >= height:
                     self.video_frame = self.loadImage('../resources/img/highlight/frame_horizontal.png', 1180, 0, 5)
                 else:
                     self.video_frame = self.loadImage('../resources/img/highlight/frame_tate.png', 1330, 0, 5)
             else:
-                if width > height:
+                if width >= height:
                     self.updateImage(self.video_frame, '../resources/img/highlight/frame_horizontal.png', 1180, 0, 5)
                 else:
                     self.updateImage(self.video_frame,'../resources/img/highlight/frame_tate.png', 1330, 0, 5)
+            self.video_frame.show()
         except Exception as e:
             logging.error('MAIN: %s' % e)
+
+    # check end of video playback
+    def videoStatusChanged(self, status):
+        if status == QMediaPlayer.EndOfMedia:
+            self.video_frame.hide()
 
     # play video
     def playVideo(self, current_game):
         logging.info('MAIN: playing %s video' % current_game)
-        file = os.path.join(os.path.dirname(__file__), "../mame/snap/%s.mp4" % current_game)
+        file = os.path.join(os.path.dirname(__file__), "../../resources/mame/snap/%s.mp4" % current_game)
         try:
             if self.media_player.state() == QMediaPlayer.PlayingState:
                 self.media_player.stop()
@@ -500,7 +529,7 @@ class myScene(QGraphicsScene):
                 self.game_frame.show()
             except Exception as e:
                 self.game_frame = self.loadGameFrame(64, 280)
-                print(e)
+                logging.error("MAIN: %s" % e)
         else:
                 self.game_frame.hide()
 
@@ -639,10 +668,6 @@ class myScene(QGraphicsScene):
         current_line = self.scnd_menu_cur - 2
         current_game = self.game_menu_cur
 
-        print("self.scnd_menu_cur: %d" % self.scnd_menu_cur)
-        print("self.game_menu_cur: %d" % self.game_menu_cur)
-
-
         if self.main_menu_cur == 0 and self.scnd_menu_cur == 0:
             # main menu
             self.updateLabel(self.menu_label_0, self.topMenu[0], 80, y, size, Qt.yellow)
@@ -747,23 +772,3 @@ class myScene(QGraphicsScene):
             self.updateLabel(self.menu_label_2, self.topMenu[2], 455, y, size, Qt.white)
             self.updateLabel(self.menu_label_3, self.topMenu[3], 720, y, size, Qt.white)
             self.updateLabel(self.menu_label_4, self.topMenu[4], 940, y, size, Qt.yellow)
-
-# main class
-class utilsMain():
-    def __init__(self, window):
-        self.Window = window
-        self.widgetMain = self.Window.cwidget
-
-        # clean first screen
-        self.Window.setStyleSheet("")
-        self.Window.pbar.setParent(None)
-
-        self.Scene = myScene(self.Window)
-
-        self.View = QGraphicsView(self.Scene, self.Window)
-        sizeScreen = QDesktopWidget().screenGeometry(-1)
-        self.View.setGeometry(0, 0, sizeScreen.width(), sizeScreen.height())
-        self.View.setStyleSheet("border: 0px")
-        self.View.setViewportMargins(-2, -2, -2, -2)
-        self.View.setFrameStyle(QFrame.NoFrame)
-        self.View.show()

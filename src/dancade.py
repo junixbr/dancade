@@ -21,7 +21,7 @@ from lib import db
 global CONFS
 CONFS=[]
 #CONFS = settings.readConf()
-CONFS.append('mame/roms')
+CONFS.append('resources/mame/roms')
 
 class mainUI(QMainWindow):
     def __init__(self):
