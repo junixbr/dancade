@@ -7,7 +7,6 @@ import logging
 logging.basicConfig(filename='log/dancade.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%d-%m-%y %H:%M:%S')
 logging.info('MAIN: Starting engine...')
 
-from cv2 import VideoCapture, CAP_PROP_FRAME_WIDTH, CAP_PROP_FRAME_HEIGHT
 import os, subprocess
 import sip
 
@@ -35,7 +34,6 @@ class utilsMain():
     def __init__(self, window):
         self.Window = window
         self.widgetMain = self.Window.cwidget
-
 
         self.load_game_list()
 
@@ -148,7 +146,6 @@ class myScene(QGraphicsScene):
         self.is_going_up = False
         self.is_going_right = False
         self.game_info_label = []
-        self.video_frame = []
 
         self.topMenu = ['Highlights', 'All', 'Categories', 'Search', 'Settings']
         self.game_line = []
@@ -157,8 +154,8 @@ class myScene(QGraphicsScene):
         self.video_item = QGraphicsVideoItem()
         self.addItem(self.video_item)
         self.video_item.setSize(QSizeF(709.33, 532))
-        self.video_item.setPos(1192, 0)
-        self.video_item.setZValue(2)
+        self.video_item.setPos(1210, 0)
+        self.video_item.setZValue(0)
 
         self.media_player = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         self.media_player.setVideoOutput(self.video_item)
@@ -246,8 +243,10 @@ class myScene(QGraphicsScene):
         return super(myScene, self).eventFilter(source, event)
 
     # create label
-    def printLabel(self, text, x, y, size, color):
-        label_name = self.addText(text, QFont(self.parent.families[0], size))
+    def printLabel(self, text, x, y, size, color, bold):
+        text_font = QFont(self.parent.families[0], size)
+        text_font.setBold(bold)
+        label_name = self.addText(text, text_font)
         label_name.setPos(x, y)
         label_name.setDefaultTextColor(color)
         return(label_name)
@@ -354,9 +353,11 @@ class myScene(QGraphicsScene):
         try:
             if os.path.isfile(image):
                 picture = QGraphicsPixmapItem()
-                picture.setPixmap(QPixmap(image).scaledToHeight(200))
+                '''picture.setPixmap(QPixmap(image).scaledToHeight(200))
                 if picture.boundingRect().width() > 300:
-                    picture.setPixmap(QPixmap(image).scaledToWidth(300))
+                    picture.setPixmap(QPixmap(image).scaledToWidth(300))'''
+                picture.setTransformationMode(Qt.SmoothTransformation)
+                picture.setPixmap(QPixmap(image).scaled(300, 200))
                 self.addItem(picture)
                 x = x + 150 - (picture.boundingRect().width() / 2)
                 picture.setPos(x, y)
@@ -365,7 +366,7 @@ class myScene(QGraphicsScene):
             else:
                 logging.info('MAIN: no game image found: %s' % image)
                 picture = QGraphicsPixmapItem()
-                picture.setPixmap(QPixmap('../resources/sprite/game_no_image.png').scaledToHeight(200))
+                picture.setPixmap(QPixmap('../resources/sprite/game_no_image.png'))
                 self.addItem(picture)
                 x = x + 150 - (picture.boundingRect().width() / 2)
                 picture.setPos(x, y)
@@ -378,6 +379,14 @@ class myScene(QGraphicsScene):
     def updateGamePicture(self, game_object, x, y):
         x = x + 150 - (game_object.boundingRect().width() / 2)
         game_object.setPos(x, y)
+
+    # zooing the game picture
+    def gameZoom(self, game_object, x, y, zoom):
+        new_rect = QRectF(x - 27, (y - 27), 353, 253)
+        self.game_frame.setRect(new_rect)
+        game_object.setTransformationMode(Qt.SmoothTransformation)
+        game_object.setScale(1.28)
+        game_object.setPos(x - 40, y - 28)
 
     # fill game list
     def generateGameList(self):
@@ -400,7 +409,7 @@ class myScene(QGraphicsScene):
             data_game = database.queryOrganicGames(lib[0])
             if len(data_game) > 0:
                 self.games_per_lin[glin] = len(data_game)
-                libText = self.printLabel(lib[1], col, lin, size, Qt.lightGray)
+                libText = self.printLabel(lib[1], col, lin, size, Qt.lightGray, False)
                 self.library_label.append({'id': lib[0], 'label': libText, 'col': col, 'lin': lin})
                 for item in data_game:
                     #QCoreApplication.processEvents()
@@ -408,7 +417,7 @@ class myScene(QGraphicsScene):
                         game_label_text = '%s..' % item[2][:20]
                     else:
                         game_label_text = item[2]
-                    lbl = self.printLabel(game_label_text, col, lin, 16, Qt.white)
+                    lbl = self.printLabel(game_label_text, col, lin, 16, Qt.white, False)
                     col_game_label = col + 150 - lbl.boundingRect().width() / 2
                     lin_game_label = lin + 240
                     self.updateLabel(lbl, game_label_text, col_game_label, lin_game_label, 14, Qt.white)
@@ -434,12 +443,12 @@ class myScene(QGraphicsScene):
         if show:
             logging.info('MAIN: show game information: %s' % game_info['game'])
             if not self.game_info_label:
-                self.game_info_label.append(self.printLabel(game_info['description'], 80, 100, size, Qt.white))
-                self.game_info_label.append(self.printLabel('Year: %s ' % game_info['year'], 80, 150, size, Qt.lightGray))
-                self.game_info_label.append(self.printLabel('Publisher: %s ' % game_info['manufacturer'], 80, 180, size, Qt.lightGray))
-                self.game_info_label.append(self.printLabel('Last played: %s ' % game_info['lastplayed'], 80, 210, size, Qt.lightGray))
-                self.game_info_label.append(self.printLabel('Play count: %s ' % game_info['playcount'], 500, 210, size, Qt.lightGray))
-                self.game_info_label.append(self.printLabel('Rating: %s ' % game_info['rating'], 310, 210, size, Qt.lightGray))
+                self.game_info_label.append(self.printLabel(game_info['description'], 80, 100, size, Qt.white, True))
+                self.game_info_label.append(self.printLabel('Year: %s ' % game_info['year'], 80, 150, size, Qt.lightGray, False))
+                self.game_info_label.append(self.printLabel('Publisher: %s ' % game_info['manufacturer'], 80, 180, size, Qt.lightGray, False))
+                self.game_info_label.append(self.printLabel('Last played: %s ' % game_info['lastplayed'], 80, 210, size, Qt.lightGray, False))
+                self.game_info_label.append(self.printLabel('Play count: %s ' % game_info['playcount'], 500, 210, size, Qt.lightGray, False))
+                self.game_info_label.append(self.printLabel('Rating: %s ' % game_info['rating'], 310, 210, size, Qt.lightGray, False))
             else:
                 self.updateLabel(self.game_info_label[0], game_info['description'], 80, 100, size, Qt.white)
                 self.updateLabel(self.game_info_label[1], 'Year: %s ' % game_info['year'], 80, 150, size, Qt.lightGray)
@@ -453,31 +462,10 @@ class myScene(QGraphicsScene):
             for i in range(len(self.game_info_label)):
                 self.game_info_label[i].hide()
 
-    # check if video is horizontal or vertical
-    def checkVideoOrientation(self, current_game):
-        file = os.path.join(os.path.dirname(__file__), "../../resources/mame/snap/%s.mp4" % current_game)
-        video = VideoCapture(file)
-        width = video.get(CAP_PROP_FRAME_WIDTH)
-        height = video.get(CAP_PROP_FRAME_HEIGHT)
-        try:
-            if not self.video_frame:
-                if width >= height:
-                    self.video_frame = self.loadImage('../resources/img/highlight/frame_horizontal.png', 1180, 0, 5)
-                else:
-                    self.video_frame = self.loadImage('../resources/img/highlight/frame_tate.png', 1330, 0, 5)
-            else:
-                if width >= height:
-                    self.updateImage(self.video_frame, '../resources/img/highlight/frame_horizontal.png', 1180, 0, 5)
-                else:
-                    self.updateImage(self.video_frame,'../resources/img/highlight/frame_tate.png', 1330, 0, 5)
-            self.video_frame.show()
-        except Exception as e:
-            logging.error('MAIN: %s' % e)
-
     # check end of video playback
     def videoStatusChanged(self, status):
         if status == QMediaPlayer.EndOfMedia:
-            self.video_frame.hide()
+            pass
 
     # play video
     def playVideo(self, current_game):
@@ -647,11 +635,11 @@ class myScene(QGraphicsScene):
         self.generateGameList()
 
         # main menu
-        self.menu_label_0 = self.printLabel(self.topMenu[0], 80, y, size, Qt.yellow)
-        self.menu_label_1 = self.printLabel(self.topMenu[1], 350, y, size, Qt.white)
-        self.menu_label_2 = self.printLabel(self.topMenu[2], 455, y, size, Qt.white)
-        self.menu_label_3 = self.printLabel(self.topMenu[3], 720, y, size, Qt.white)
-        self.menu_label_4 = self.printLabel(self.topMenu[4], 940, y, size, Qt.white)
+        self.menu_label_0 = self.printLabel(self.topMenu[0], 80, y, size, Qt.yellow, False)
+        self.menu_label_1 = self.printLabel(self.topMenu[1], 350, y, size, Qt.white, False)
+        self.menu_label_2 = self.printLabel(self.topMenu[2], 455, y, size, Qt.white, False)
+        self.menu_label_3 = self.printLabel(self.topMenu[3], 720, y, size, Qt.white, False)
+        self.menu_label_4 = self.printLabel(self.topMenu[4], 940, y, size, Qt.white, False)
 
         #slide dots
         self.slideDot0 = self.loadSlideDot(60, 450, True)
@@ -682,9 +670,27 @@ class myScene(QGraphicsScene):
             # highlights
             highlight_object = self.updateHighlightImage(self.highlight_object, '../resources/img/highlight/highlight-%s.png' % self.hglt_menu_cur, 0, 0)
 
+            # check video
+            try:
+                if self.media_player.state() == QMediaPlayer.PlayingState:
+                    self.media_player.stop()
+                    self.video_item.hide()
+
+            except Exception as e:
+                logging.error('MAIN: %s' % e)
+
         if self.main_menu_cur == 0 and self.scnd_menu_cur == 1:
             # hide game info
             self.gameInfo(False)
+
+            # check video
+            try:
+                if self.media_player.state() == QMediaPlayer.PlayingState:
+                    self.media_player.stop()
+                    self.video_item.hide()
+
+            except Exception as e:
+                logging.error('MAIN: %s' % e)
 
             # highlights
             highlight_object = self.updateHighlightImage(self.highlight_object, '../resources/img/highlight/highlight-%s.png' % self.hglt_menu_cur, 0, 0)
@@ -740,14 +746,20 @@ class myScene(QGraphicsScene):
             self.updateHighlightImage(self.highlight_object, '../resources/img/highlight/highlight-info.png', 0, 0)
 
             # show game info
+            current_line = self.scnd_menu_cur - 2
+            current_game = self.game_menu_cur
+            current_game_image = self.game_line[current_line][current_game]['game_object']
+            current_game_pos_x = self.game_line[current_line][current_game]['game_pos'][0]
+            current_game_pos_y = self.game_line[current_line][current_game]['game_pos'][1]
             self.gameInfo(True, self.game_line[current_line][current_game])
             
             # play video
-            self.checkVideoOrientation(self.game_line[current_line][current_game]['game'])
+            self.video_item.show()
             self.playVideo(self.game_line[current_line][current_game]['game'])
+
+            # zoom game image
+            #self.gameZoom(current_game_image, current_game_pos_x, current_game_pos_y, 200)
             
-
-
         elif self.main_menu_cur == 1:
             self.updateLabel(self.menu_label_0, self.topMenu[0], 80, y, size, Qt.white)
             self.updateLabel(self.menu_label_1, self.topMenu[1], 350, y, size, Qt.yellow)
